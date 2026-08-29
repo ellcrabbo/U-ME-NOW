@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #0a0a0b;
+  color: #f5f0e8;
+  font-family: 'Instrument Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+::selection {
+  background: #ff5c38;
+  color: #0a0a0b;
+}
+
+/* Slim, restrained scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #26262a;
+  border-radius: 999px;
+}
+
+@layer components {
+  .display {
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+    letter-spacing: -0.02em;
+    line-height: 0.95;
+  }
+  .btn-signal {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-signal px-6 py-4 font-semibold text-ink transition-transform duration-200 active:scale-[0.97];
+    min-height: 52px;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-ink-line bg-transparent px-6 py-4 font-semibold text-warm-white transition-colors duration-200 active:bg-ink-soft;
+    min-height: 52px;
+  }
+  .field {
+    @apply w-full rounded-2xl border border-ink-line bg-ink-soft px-4 py-3.5 text-warm-white placeholder:text-warm-faint outline-none transition-colors duration-200 focus:border-signal;
+    min-height: 52px;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-line px-3.5 py-2 text-sm font-medium text-warm-mute transition-colors duration-200;
+  }
+  .chip-on {
+    @apply border-signal bg-signal/10 text-warm-white;
+  }
+  .label {
+    @apply mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-warm-faint;
+  }
+  .card {
+    @apply rounded-card border border-ink-line bg-ink-card;
+  }
+}
+
+/* Safe-area padding for notched devices */
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 4.75rem);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
