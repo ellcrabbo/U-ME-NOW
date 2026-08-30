@@ -113,3 +113,5 @@ Only after these checks pass should live Stripe keys/prices be used.
 ```
 
 See `LAUNCH_CHECKLIST.md` for the remaining legal, support, moderation, DNS, authentication, PWA and payment approval checks.
+
+<!-- CI trigger: billing configuration was changed to public-repository Actions usage. -->
