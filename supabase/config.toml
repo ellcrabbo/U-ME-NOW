@@ -1,5 +1,5 @@
 # Supabase Edge Function configuration
-# Keep JWT verification enabled for user-facing functions.
+# Keep JWT verification enabled for all user-facing functions.
 
 [functions.delete-account]
 verify_jwt = true
@@ -9,6 +9,3 @@ verify_jwt = true
 
 [functions.create-portal-session]
 verify_jwt = true
-
-[functions.stripe-webhook]
-verify_jwt = false
