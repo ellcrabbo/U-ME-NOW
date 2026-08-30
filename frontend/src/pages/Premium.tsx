@@ -5,22 +5,52 @@ import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
 import { Logo, Spinner } from '../components/Brand'
 
+type Plan = 'pro' | 'unlimited' | 'lifetime'
+
 interface Subscription {
+  plan: Plan
   status: string
   currency: string | null
   current_period_end: string | null
   cancel_at_period_end: boolean
+  lifetime: boolean
 }
 
-function defaultCurrency(): 'idr' | 'usd' {
-  const locale = navigator.language.toLowerCase()
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return locale.startsWith('id') || zone === 'Asia/Jakarta' ? 'idr' : 'usd'
+const plans: Array<{
+  id: Plan
+  name: string
+  cadence: string
+  description: string
+}> = [
+  {
+    id: 'pro',
+    name: 'Pro',
+    cadence: 'Every 2 weeks',
+    description: 'More freedom to like and discover.'
+  },
+  {
+    id: 'unlimited',
+    name: 'Unlimited',
+    cadence: 'Monthly',
+    description: 'Unlimited access to premium discovery.'
+  },
+  {
+    id: 'lifetime',
+    name: 'Lifetime',
+    cadence: 'One-off',
+    description: 'U-ME-NOW+ permanently. No renewals.'
+  }
+]
+
+function defaultPlan(): Plan {
+  const stored = localStorage.getItem('ume-now-plan')
+  if (stored === 'pro' || stored === 'unlimited' || stored === 'lifetime') return stored
+  return 'pro'
 }
 
 export default function Premium() {
   const [params] = useSearchParams()
-  const [currency, setCurrency] = useState<'idr' | 'usd'>(() => defaultCurrency())
+  const [plan, setPlan] = useState<Plan>(() => defaultPlan())
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -28,9 +58,13 @@ export default function Premium() {
 
   const success = params.get('success') === '1'
   const canceled = params.get('canceled') === '1'
-  const active = Boolean(subscription && ['active', 'trialing'].includes(subscription.status) && (!subscription.current_period_end || new Date(subscription.current_period_end) > new Date()))
+  const active = Boolean(subscription && (
+    subscription.lifetime ||
+    (['active', 'trialing'].includes(subscription.status) &&
+      (!subscription.current_period_end || new Date(subscription.current_period_end) > new Date()))
+  ))
 
-  const priceLabel = useMemo(() => (currency === 'idr' ? 'Rp175,000 / month' : '$9.99 / month'), [currency])
+  const selectedPlan = useMemo(() => plans.find((item) => item.id === plan)!, [plan])
 
   async function loadSubscription() {
     const { data, error: queryError } = await supabase.rpc('my_subscription')
@@ -41,16 +75,22 @@ export default function Premium() {
   useEffect(() => {
     loadSubscription()
     if (success) {
-      const timer = window.setTimeout(loadSubscription, 2500)
-      return () => window.clearTimeout(timer)
+      const timers = [2500, 6000, 10000].map((delay) => window.setTimeout(loadSubscription, delay))
+      return () => timers.forEach(window.clearTimeout)
     }
   }, [success])
+
+  function choosePlan(nextPlan: Plan) {
+    setPlan(nextPlan)
+    localStorage.setItem('ume-now-plan', nextPlan)
+    setError('')
+  }
 
   async function subscribe() {
     setBusy(true)
     setError('')
     const { data, error: invokeError } = await supabase.functions.invoke('create-checkout-session', {
-      body: { currency }
+      body: { plan }
     })
     if (invokeError || !data?.url) {
       setError(invokeError?.message || data?.error || 'Unable to start checkout. Please try again.')
@@ -95,7 +135,7 @@ export default function Premium() {
         )}
         {canceled && (
           <div className="mt-5 rounded-2xl border border-ink-line bg-ink-card p-4 text-sm text-warm-mute" data-testid="premium-canceled">
-            Checkout was canceled. No subscription was started.
+            Checkout was canceled. No payment was taken.
           </div>
         )}
 
@@ -103,13 +143,17 @@ export default function Premium() {
           <div className="mt-6 card p-5" data-testid="premium-active">
             <div className="flex items-center gap-2 text-signal"><Sparkles size={18} /><span className="font-semibold">U-ME-NOW+ is active</span></div>
             <p className="mt-2 text-sm text-warm-mute">
-              {subscription?.cancel_at_period_end && subscription.current_period_end
-                ? `Your subscription is set to end on ${new Date(subscription.current_period_end).toLocaleDateString()}. You keep access until then.`
-                : 'Your premium features are active.'}
+              {subscription?.lifetime
+                ? 'Lifetime access is active. There are no recurring charges.'
+                : subscription?.cancel_at_period_end && subscription.current_period_end
+                  ? `Your ${subscription.plan} subscription is set to end on ${new Date(subscription.current_period_end).toLocaleDateString()}. You keep access until then.`
+                  : `Your ${subscription?.plan || 'premium'} features are active.`}
             </p>
-            <button onClick={manageBilling} disabled={busy} className="btn-ghost mt-4 inline-flex items-center gap-2">
-              <CreditCard size={16} /> Manage subscription <ExternalLink size={14} />
-            </button>
+            {!subscription?.lifetime && (
+              <button onClick={manageBilling} disabled={busy} className="btn-ghost mt-4 inline-flex items-center gap-2">
+                <CreditCard size={16} /> Manage subscription <ExternalLink size={14} />
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -123,21 +167,26 @@ export default function Premium() {
             </div>
 
             <div className="mt-6 card p-5">
-              <p className="text-sm font-semibold text-warm-white">Your price</p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button onClick={() => setCurrency('idr')} className={`rounded-2xl border p-4 text-left ${currency === 'idr' ? 'border-signal bg-signal/10' : 'border-ink-line'}`}>
-                  <span className="block text-lg font-bold text-warm-white">Rp175k</span>
-                  <span className="text-xs text-warm-faint">Indonesia</span>
-                </button>
-                <button onClick={() => setCurrency('usd')} className={`rounded-2xl border p-4 text-left ${currency === 'usd' ? 'border-signal bg-signal/10' : 'border-ink-line'}`}>
-                  <span className="block text-lg font-bold text-warm-white">$9.99</span>
-                  <span className="text-xs text-warm-faint">International</span>
-                </button>
+              <p className="text-sm font-semibold text-warm-white">Choose your plan</p>
+              <div className="mt-3 space-y-2">
+                {plans.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => choosePlan(item.id)}
+                    className={`w-full rounded-2xl border p-4 text-left ${plan === item.id ? 'border-signal bg-signal/10' : 'border-ink-line'}`}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-lg font-bold text-warm-white">{item.name}</span>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-warm-faint">{item.cadence}</span>
+                    </div>
+                    <span className="mt-1 block text-sm text-warm-mute">{item.description}</span>
+                  </button>
+                ))}
               </div>
-              <p className="mt-3 text-sm text-warm-mute">{priceLabel}. Renews monthly until canceled.</p>
+              <p className="mt-3 text-sm text-warm-mute">{selectedPlan.name} · {selectedPlan.cadence}. Stripe will show the exact price before payment.</p>
               {error && <p className="mt-4 text-sm text-signal" data-testid="premium-error">{error}</p>}
               <button onClick={subscribe} disabled={busy} className="btn-signal mt-5 w-full" data-testid="premium-checkout">
-                {busy ? 'Opening secure checkout…' : `Get U-ME-NOW+ — ${priceLabel}`}
+                {busy ? 'Opening secure checkout…' : `Continue with ${selectedPlan.name}`}
               </button>
               <p className="mt-3 text-center text-xs text-warm-faint">Secure checkout powered by Stripe.</p>
             </div>
