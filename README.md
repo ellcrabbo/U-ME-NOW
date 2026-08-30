@@ -16,7 +16,7 @@ A mobile-first, installable **PWA** for adult (18+) location-based dating and so
 │   └── scripts/              # development seed helpers
 └── supabase/
     ├── migrations/           # 0001..0006 SQL — run in order
-    ├── config.toml            # Edge Function JWT settings
+    ├── config.toml           # Edge Function JWT settings
     └── functions/
         ├── delete-account/
         ├── create-checkout-session/
@@ -78,7 +78,7 @@ For production email, configure **Resend as Supabase SMTP** rather than using th
 
 ## 6. Stripe setup
 
-Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for subscriptions and the Stripe Billing Portal for billing management. Stripe documents subscription Checkout Sessions and the customer portal as server-side integrations; webhook signatures must be verified against the raw request body. citeturn1search2turn1search0turn2search0
+Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for subscriptions and the Stripe Billing Portal for billing management. The webhook verifies Stripe's signature against the raw request body.
 
 ### Create the Stripe catalogue
 
@@ -101,7 +101,7 @@ In Stripe Billing → Customer portal, enable at minimum:
 - invoice history
 - subscription cancellation
 
-The portal gives customers a secure hosted page for managing billing. citeturn1search0
+The portal gives customers a secure hosted page for managing billing.
 
 ### Supabase Edge Function secrets
 
@@ -147,7 +147,7 @@ Subscribe to:
 
 Copy the endpoint signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
 
-The webhook is intentionally the authoritative source for subscription status. It verifies Stripe's signature and writes the entitlement into Supabase. Stripe recommends signature verification and handling subscription changes through webhooks. citeturn2search1turn2search0
+The webhook is the authoritative source for subscription status. It verifies the Stripe signature and writes the entitlement into Supabase.
 
 ## 7. GitHub
 
