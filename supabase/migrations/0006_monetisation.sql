@@ -78,6 +78,9 @@ declare v_used integer;
 begin
   if auth.uid() is null then return false; end if;
   if public.is_premium(auth.uid()) then return true; end if;
+  -- Serialize free-like quota checks per user so concurrent requests cannot
+  -- both observe the same remaining slot and exceed the daily limit.
+  perform pg_advisory_xact_lock(hashtext(auth.uid()::text));
   select count(*)::integer into v_used from public.likes
   where liker_id = auth.uid() and created_at >= date_trunc('day', now());
   return v_used < 20;
