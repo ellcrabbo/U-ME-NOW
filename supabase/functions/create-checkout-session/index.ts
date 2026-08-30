@@ -1,10 +1,10 @@
-// Creates a Stripe-hosted Checkout Session for U-ME-NOW+.
+// Creates a Stripe-hosted Checkout Session for U-ME-NOW+ plans.
 // Required Edge Function secrets:
-// STRIPE_SECRET_KEY, STRIPE_PRICE_ID_IDR, STRIPE_PRICE_ID_USD, APP_URL
+// STRIPE_SECRET_KEY, STRIPE_PRICE_ID_PRO, STRIPE_PRICE_ID_UNLIMITED,
+// STRIPE_PRICE_ID_LIFETIME, APP_URL
 //
 // Stripe Sync Engine is the billing source of truth. This function only creates
-// the Stripe customer/session; subscription state is synced into Postgres by
-// Supabase's Stripe integration.
+// the Stripe customer/session; billing state is synced into Postgres.
 
 import Stripe from 'npm:stripe@22.4.0'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -15,9 +15,24 @@ const cors = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 }
 
+type Plan = 'pro' | 'unlimited' | 'lifetime'
+
+const PLAN_CONFIG: Record<Plan, { secret: string; mode: 'subscription' | 'payment' }> = {
+  pro: { secret: 'STRIPE_PRICE_ID_PRO', mode: 'subscription' },
+  unlimited: { secret: 'STRIPE_PRICE_ID_UNLIMITED', mode: 'subscription' },
+  lifetime: { secret: 'STRIPE_PRICE_ID_LIFETIME', mode: 'payment' }
+}
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...cors, 'Content-Type': 'application/json' }
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: cors })
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -26,13 +41,13 @@ Deno.serve(async (req) => {
     const appUrl = Deno.env.get('APP_URL') || 'https://u-me-now.online'
     const authHeader = req.headers.get('Authorization') ?? ''
 
-    if (!stripeKey) throw new Error('Stripe is not configured')
+    if (!stripeKey) return json({ error: 'Stripe is not configured' }, 500)
 
-    const asUser = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } })
+    const asUser = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } }
+    })
     const { data: { user }, error: userErr } = await asUser.auth.getUser()
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } })
-    }
+    if (userErr || !user) return json({ error: 'Unauthorized' }, 401)
 
     const { data: profile } = await asUser
       .from('profiles')
@@ -41,20 +56,17 @@ Deno.serve(async (req) => {
       .maybeSingle()
 
     if (!profile?.onboarding_complete || profile.account_status !== 'active') {
-      return new Response(JSON.stringify({ error: 'Your account must be active and onboarded before subscribing.' }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } })
+      return json({ error: 'Your account must be active and onboarded before subscribing.' }, 403)
     }
 
     const body = await req.json().catch(() => ({}))
-    const currency = body?.currency === 'usd' ? 'usd' : 'idr'
-    const priceId = currency === 'usd'
-      ? Deno.env.get('STRIPE_PRICE_ID_USD')
-      : Deno.env.get('STRIPE_PRICE_ID_IDR')
-    if (!priceId) throw new Error(`Stripe ${currency.toUpperCase()} price is not configured`)
+    const plan = body?.plan as Plan
+    if (!plan || !Object.prototype.hasOwnProperty.call(PLAN_CONFIG, plan)) {
+      return json({ error: 'Invalid plan. Choose pro, unlimited, or lifetime.' }, 400)
+    }
 
     const stripe = new Stripe(stripeKey, { httpClient: Stripe.createFetchHttpClient() })
 
-    // Use Stripe customer metadata as the stable user mapping. This avoids a
-    // second application-owned subscription/customer ledger.
     const existingCustomers = await stripe.customers.search({
       query: `metadata['user_id']:'${user.id}'`,
       limit: 1
@@ -69,41 +81,69 @@ Deno.serve(async (req) => {
       customerId = customer.id
     }
 
-    // Prevent a second active subscription even if the Sync Engine has not yet
-    // completed its first real-time update.
     const existingSubscriptions = await stripe.subscriptions.list({
       customer: customerId,
       status: 'all',
-      limit: 10
+      limit: 20
     })
     const activeSubscription = existingSubscriptions.data.find((subscription) =>
       ['active', 'trialing', 'past_due'].includes(subscription.status)
     )
     if (activeSubscription) {
-      return new Response(JSON.stringify({ error: 'You already have a U-ME-NOW+ subscription.', manage: true }), { status: 409, headers: { ...cors, 'Content-Type': 'application/json' } })
+      return json({ error: 'You already have an active U-ME-NOW+ subscription.', manage: true }, 409)
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
+    // Lifetime is permanent, so do not allow a second purchase.
+    if (plan === 'lifetime') {
+      const lifetimeSessions = await stripe.checkout.sessions.list({
+        customer: customerId,
+        limit: 100
+      })
+      const alreadyPurchased = lifetimeSessions.data.some((session) =>
+        session.payment_status === 'paid' && session.metadata?.plan === 'lifetime'
+      )
+      if (alreadyPurchased) {
+        return json({ error: 'You already own U-ME-NOW+ Lifetime.', manage: false }, 409)
+      }
+    }
+
+    const config = PLAN_CONFIG[plan]
+    const priceId = Deno.env.get(config.secret)
+    if (!priceId) return json({ error: `${config.secret} is not configured` }, 500)
+
+    const common = {
       customer: customerId,
       client_reference_id: user.id,
       line_items: [{ price: priceId, quantity: 1 }],
-      subscription_data: {
-        metadata: { user_id: user.id, product: 'u-me-now-plus', currency }
-      },
-      success_url: `${appUrl}/premium?success=1`,
-      cancel_url: `${appUrl}/premium?canceled=1`,
-      allow_promotion_codes: true
-    })
+      success_url: `${appUrl}/premium?success=1&plan=${plan}`,
+      cancel_url: `${appUrl}/premium?canceled=1&plan=${plan}`,
+      allow_promotion_codes: true,
+      metadata: {
+        user_id: user.id,
+        plan,
+        product: 'u-me-now-plus'
+      }
+    }
 
-    return new Response(JSON.stringify({ url: session.url }), {
-      status: 200,
-      headers: { ...cors, 'Content-Type': 'application/json' }
-    })
+    const session = plan === 'lifetime'
+      ? await stripe.checkout.sessions.create({
+          ...common,
+          mode: 'payment'
+        })
+      : await stripe.checkout.sessions.create({
+          ...common,
+          mode: 'subscription',
+          subscription_data: {
+            metadata: {
+              user_id: user.id,
+              plan,
+              product: 'u-me-now-plus'
+            }
+          }
+        })
+
+    return json({ url: session.url })
   } catch (e) {
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
-      status: 500,
-      headers: { ...cors, 'Content-Type': 'application/json' }
-    })
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500)
   }
 })
