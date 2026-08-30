@@ -3,8 +3,8 @@
 A mobile-first, installable **PWA** for adult (18+) location-based dating and social discovery, launching privately in **Jakarta**. Built with **React + TypeScript + Vite**, backed by **Supabase Free** (Auth, PostgreSQL, Storage, Edge Functions, Realtime), and deployable as a static site to **Cloudflare Pages Free**.
 
 - Public language: **U, ME, NOW** · **WHO'S AROUND?** · *Meet people nearby. Right now.* · *Less scrolling. More NOW.*
-- Monetisation: optional **U-ME-NOW+** monthly subscription via **Stripe**.
-- U-ME-NOW+ pricing: **Rp175,000/month** for Indonesia or **US$9.99/month** internationally.
+- Monetisation: optional **U-ME-NOW+** via **Stripe**.
+- Launch plans: **Pro** — Rp175,000 every 2 weeks; **Unlimited** — monthly; **Lifetime** — one-off.
 - Free users keep core discovery, matching and direct chat. Premium users get unlimited likes and can see people who liked them.
 - The browser only ever uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Stripe secret keys are server-side only.
 
@@ -15,7 +15,7 @@ A mobile-first, installable **PWA** for adult (18+) location-based dating and so
 │   ├── public/               # icons, manifest, _redirects
 │   └── scripts/              # development seed helpers
 └── supabase/
-    ├── migrations/           # 0001..0007 SQL — run in order
+    ├── migrations/           # 0001..0008 SQL — run in order
     ├── config.toml           # Edge Function JWT settings
     └── functions/
         ├── delete-account/
@@ -30,7 +30,7 @@ A mobile-first, installable **PWA** for adult (18+) location-based dating and so
 1. Go to https://supabase.com → sign in → **New project** (Free plan). Region: **Singapore**.
 2. Open **Project Settings → API**.
 3. Use the Project URL and publishable/anon key only in the frontend.
-4. Install **Stripe Sync Engine** from **Integrations → Stripe Sync Engine**. It creates the `stripe` schema, syncs Stripe customers/subscriptions/invoices/payments, and manages its own webhook/sync infrastructure.
+4. Install **Stripe Sync Engine** from **Integrations → Stripe Sync Engine**. It creates the `stripe` schema and syncs Stripe billing objects into Postgres.
 
 ## 2. Browser environment variables
 
@@ -55,6 +55,7 @@ Run each file in `supabase/migrations/` in order in the Supabase SQL Editor:
 5. `0005_realtime.sql` — realtime messages
 6. `0006_monetisation.sql` — initial U-ME-NOW+ entitlement/quota implementation
 7. `0007_stripe_sync_engine.sql` — makes Stripe Sync Engine the billing source of truth and removes the duplicate local subscription/event ledger
+8. `0008_stripe_plans.sql` — Pro, Unlimited and Lifetime entitlement logic
 
 CLI alternative:
 
@@ -79,20 +80,17 @@ For production email, configure **Resend as Supabase SMTP** rather than using th
 
 ## 6. Stripe setup
 
-Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for subscriptions and the Stripe Billing Portal for billing management. **Supabase Stripe Sync Engine is the authoritative billing data source for U-ME-NOW+ entitlements.**
+Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for purchases and subscriptions, and the Stripe Billing Portal for recurring subscription management. **Supabase Stripe Sync Engine is the authoritative billing data source for U-ME-NOW+ entitlements.**
 
 ### Create the Stripe catalogue
 
-In **Stripe Dashboard → Product catalogue** create:
+In **Stripe Dashboard → Product catalogue** create the U-ME-NOW+ catalogue and the three launch prices:
 
-**Product:** `U-ME-NOW+`
+- **Pro** — **Rp175,000 every 2 weeks** — copy its Price ID into `STRIPE_PRICE_ID_PRO`
+- **Unlimited** — **monthly** — copy its Price ID into `STRIPE_PRICE_ID_UNLIMITED`
+- **Lifetime** — **one-off** — copy its Price ID into `STRIPE_PRICE_ID_LIFETIME`
 
-Create two recurring monthly prices:
-
-- **IDR 175,000 / month** — copy its Price ID into `STRIPE_PRICE_ID_IDR`
-- **USD 9.99 / month** — copy its Price ID into `STRIPE_PRICE_ID_USD`
-
-Use the same product for both prices.
+Use the same U-ME-NOW+ product for the three prices if that matches the Stripe catalogue setup.
 
 ### Configure the Stripe Customer Portal
 
@@ -102,13 +100,13 @@ In Stripe Billing → Customer portal, enable at minimum:
 - invoice history
 - subscription cancellation
 
-The portal gives customers a secure hosted page for managing billing.
+The portal is used for Pro and Unlimited recurring subscriptions. Lifetime purchases do not need subscription management.
 
 ### Stripe Sync Engine
 
 Install **Supabase → Integrations → Stripe Sync Engine** and connect it to the Stripe account that owns the U-ME-NOW+ product/prices.
 
-The Sync Engine creates and maintains the `stripe` schema and handles Stripe webhooks and scheduled syncing. U-ME-NOW derives premium status from the synced `stripe.customers` and `stripe.subscriptions` records using the Stripe customer metadata field `user_id`.
+The Sync Engine creates and maintains the `stripe` schema and keeps Stripe billing data synced into Postgres. U-ME-NOW derives recurring entitlements from synced `stripe.subscriptions` and Lifetime entitlement from synced `stripe.checkout_sessions`, using Stripe customer metadata `user_id` and Checkout/Subscription metadata `plan`.
 
 ### Supabase Edge Function secrets
 
@@ -116,14 +114,15 @@ Set these in **Supabase → Edge Functions → Secrets**:
 
 ```text
 STRIPE_SECRET_KEY=sk_test_...   # use test mode during testing
-STRIPE_PRICE_ID_IDR=price_...
-STRIPE_PRICE_ID_USD=price_...
+STRIPE_PRICE_ID_PRO=price_...
+STRIPE_PRICE_ID_UNLIMITED=price_...
+STRIPE_PRICE_ID_LIFETIME=price_...
 APP_URL=https://u-me-now.online
 ```
 
 Do **not** put any of these in the React frontend.
 
-There is **no U-ME-NOW Stripe webhook secret to configure**. The Stripe Sync Engine owns the Stripe webhook/sync path.
+There is **no U-ME-NOW Stripe webhook secret to configure**. The installed Stripe Sync Engine owns the Stripe webhook/sync path.
 
 ### Deploy the Edge Functions
 
@@ -133,7 +132,7 @@ supabase functions deploy create-portal-session
 supabase functions deploy delete-account
 ```
 
-The checkout and billing-portal functions require an authenticated Supabase user. Stripe subscription state is not written into a separate application-owned table.
+The checkout and billing-portal functions require an authenticated Supabase user. Stripe billing state is not written into a separate application-owned subscription ledger.
 
 ## 7. GitHub
 
@@ -186,19 +185,23 @@ npm run dev
 
 ## 12. Production payment test
 
-Use Stripe **test mode first** with test price IDs and a Stripe test payment method. Verify:
+Use Stripe **test mode first** with test Price IDs and a Stripe test payment method. Verify:
 
 1. authenticated user opens `/premium`
-2. IDR and USD prices are selectable
-3. Checkout opens on Stripe
-4. successful checkout redirects back to `/premium`
-5. Stripe Sync Engine receives the customer/subscription records
-6. U-ME-NOW+ becomes active from the synced Stripe data
-7. free-like quota becomes unlimited
-8. incoming likes become visible
-9. Billing Portal opens
-10. cancellation at period end preserves access until `current_period_end`
-11. canceled/expired subscription removes premium access
+2. Pro, Unlimited and Lifetime are selectable
+3. Checkout opens on Stripe for the selected plan
+4. Pro creates a 2-week recurring subscription
+5. Unlimited creates a monthly recurring subscription
+6. Lifetime creates a one-off payment
+7. successful checkout redirects back to `/premium`
+8. Stripe Sync Engine receives the customer and billing records
+9. U-ME-NOW+ becomes active from the synced Stripe data
+10. free-like quota becomes unlimited
+11. incoming likes become visible
+12. Billing Portal opens for recurring plans
+13. cancellation at period end preserves access until `current_period_end`
+14. canceled/expired recurring subscriptions remove premium access
+15. Lifetime remains active after the one-off purchase
 
 Only after that should live Stripe keys and live prices be enabled.
 
