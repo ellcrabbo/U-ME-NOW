@@ -52,7 +52,7 @@ as $$
     from stripe.subscriptions s
     join stripe.customers c on c.id = s.customer
     where c.attrs #>> '{metadata,user_id}' = auth.uid()::text
-      and s.status in ('trialing', 'active', 'past_due', 'canceled', 'unpaid')
+      and s.status in ('trialing', 'active')
   ),
   lifetime_purchase as (
     select
