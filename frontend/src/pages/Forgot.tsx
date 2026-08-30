@@ -24,12 +24,12 @@ export default function Forgot() {
   }
 
   return (
-    <AuthLayout title="Reset password" subtitle="We'll email you a secure reset link.">
+    <AuthLayout title="Forgot your password?" subtitle="Enter your email and we'll send you a secure reset link.">
       <ConfigBanner />
       {sent ? (
         <div className="card p-5 text-sm text-warm-mute" data-testid="forgot-sent">
-          If an account exists for {email}, a reset link is on its way. Free Supabase email is
-          rate-limited, so allow a few minutes.
+          If an account exists for {email}, we've sent a secure password-reset link. Check your
+          inbox, and your spam or junk folder if you don't see it.
           <Link to="/auth/sign-in" className="mt-4 block text-center text-warm-mute underline">
             Back to sign in
           </Link>
@@ -37,7 +37,7 @@ export default function Forgot() {
       ) : (
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
-            <label className="label">Email</label>
+            <label className="label">Email address</label>
             <input
               className="field"
               type="email"
@@ -49,7 +49,7 @@ export default function Forgot() {
           </div>
           {err && <p className="text-sm text-signal">{err}</p>}
           <button className="btn-signal mt-2" disabled={busy} data-testid="forgot-submit">
-            {busy ? 'Sending…' : 'Send reset link'}
+            {busy ? 'Sending…' : 'Email me a reset link'}
           </button>
           <Link to="/auth/sign-in" className="mt-2 text-center text-sm text-warm-mute">
             Back to sign in
