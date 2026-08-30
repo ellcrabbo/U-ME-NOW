@@ -6,7 +6,7 @@ A mobile-first, installable **PWA** for adult (18+) location-based dating and so
 - Monetisation: optional **U-ME-NOW+** monthly subscription via **Stripe**.
 - U-ME-NOW+ pricing: **Rp175,000/month** for Indonesia or **US$9.99/month** internationally.
 - Free users keep core discovery, matching and direct chat. Premium users get unlimited likes and can see people who liked them.
-- The browser only ever uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Stripe secret keys and webhook secrets are server-side only.
+- The browser only ever uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Stripe secret keys are server-side only.
 
 ```
 /app
@@ -15,13 +15,12 @@ A mobile-first, installable **PWA** for adult (18+) location-based dating and so
 │   ├── public/               # icons, manifest, _redirects
 │   └── scripts/              # development seed helpers
 └── supabase/
-    ├── migrations/           # 0001..0006 SQL — run in order
+    ├── migrations/           # 0001..0007 SQL — run in order
     ├── config.toml           # Edge Function JWT settings
     └── functions/
         ├── delete-account/
         ├── create-checkout-session/
-        ├── create-portal-session/
-        └── stripe-webhook/
+        └── create-portal-session/
 ```
 
 ---
@@ -31,6 +30,7 @@ A mobile-first, installable **PWA** for adult (18+) location-based dating and so
 1. Go to https://supabase.com → sign in → **New project** (Free plan). Region: **Singapore**.
 2. Open **Project Settings → API**.
 3. Use the Project URL and publishable/anon key only in the frontend.
+4. Install **Stripe Sync Engine** from **Integrations → Stripe Sync Engine**. It creates the `stripe` schema, syncs Stripe customers/subscriptions/invoices/payments, and manages its own webhook/sync infrastructure.
 
 ## 2. Browser environment variables
 
@@ -53,7 +53,8 @@ Run each file in `supabase/migrations/` in order in the Supabase SQL Editor:
 3. `0003_rls.sql` — Row Level Security policies
 4. `0004_storage.sql` — private profile-photo storage
 5. `0005_realtime.sql` — realtime messages
-6. `0006_monetisation.sql` — Stripe subscriptions, premium entitlement, 20/day free-like quota, incoming-like RPC and RLS
+6. `0006_monetisation.sql` — initial U-ME-NOW+ entitlement/quota implementation
+7. `0007_stripe_sync_engine.sql` — makes Stripe Sync Engine the billing source of truth and removes the duplicate local subscription/event ledger
 
 CLI alternative:
 
@@ -78,7 +79,7 @@ For production email, configure **Resend as Supabase SMTP** rather than using th
 
 ## 6. Stripe setup
 
-Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for subscriptions and the Stripe Billing Portal for billing management. The webhook verifies Stripe's signature against the raw request body.
+Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for subscriptions and the Stripe Billing Portal for billing management. **Supabase Stripe Sync Engine is the authoritative billing data source for U-ME-NOW+ entitlements.**
 
 ### Create the Stripe catalogue
 
@@ -103,51 +104,36 @@ In Stripe Billing → Customer portal, enable at minimum:
 
 The portal gives customers a secure hosted page for managing billing.
 
+### Stripe Sync Engine
+
+Install **Supabase → Integrations → Stripe Sync Engine** and connect it to the Stripe account that owns the U-ME-NOW+ product/prices.
+
+The Sync Engine creates and maintains the `stripe` schema and handles Stripe webhooks and scheduled syncing. U-ME-NOW derives premium status from the synced `stripe.customers` and `stripe.subscriptions` records using the Stripe customer metadata field `user_id`.
+
 ### Supabase Edge Function secrets
 
 Set these in **Supabase → Edge Functions → Secrets**:
 
 ```text
-STRIPE_SECRET_KEY=sk_live_...
+STRIPE_SECRET_KEY=sk_test_...   # use test mode during testing
 STRIPE_PRICE_ID_IDR=price_...
 STRIPE_PRICE_ID_USD=price_...
-STRIPE_WEBHOOK_SECRET=whsec_...
 APP_URL=https://u-me-now.online
 ```
 
 Do **not** put any of these in the React frontend.
+
+There is **no U-ME-NOW Stripe webhook secret to configure**. The Stripe Sync Engine owns the Stripe webhook/sync path.
 
 ### Deploy the Edge Functions
 
 ```text
 supabase functions deploy create-checkout-session
 supabase functions deploy create-portal-session
-supabase functions deploy stripe-webhook
 supabase functions deploy delete-account
 ```
 
-`supabase/config.toml` keeps JWT verification enabled for the authenticated functions and disabled only for `stripe-webhook`.
-
-### Stripe webhook
-
-In **Stripe Dashboard → Workbench → Webhooks**, create a live endpoint:
-
-```text
-https://zfqubamijskcjbbjtxyp.supabase.co/functions/v1/stripe-webhook
-```
-
-Subscribe to:
-
-- `checkout.session.completed`
-- `customer.subscription.created`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.paid`
-- `invoice.payment_failed`
-
-Copy the endpoint signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
-
-The webhook is the authoritative source for subscription status. It verifies the Stripe signature and writes the entitlement into Supabase.
+The checkout and billing-portal functions require an authenticated Supabase user. Stripe subscription state is not written into a separate application-owned table.
 
 ## 7. GitHub
 
@@ -206,15 +192,15 @@ Use Stripe **test mode first** with test price IDs and a Stripe test payment met
 2. IDR and USD prices are selectable
 3. Checkout opens on Stripe
 4. successful checkout redirects back to `/premium`
-5. webhook creates/updates `public.subscriptions`
-6. U-ME-NOW+ becomes active
+5. Stripe Sync Engine receives the customer/subscription records
+6. U-ME-NOW+ becomes active from the synced Stripe data
 7. free-like quota becomes unlimited
 8. incoming likes become visible
 9. Billing Portal opens
 10. cancellation at period end preserves access until `current_period_end`
 11. canceled/expired subscription removes premium access
 
-Only after that should live Stripe keys, live prices and the live webhook be enabled.
+Only after that should live Stripe keys and live prices be enabled.
 
 ## Production launch
 
