@@ -1,5 +1,7 @@
 // Creates a short-lived Stripe Billing Portal session for an authenticated user.
 // Required Edge Function secret: STRIPE_SECRET_KEY
+// Stripe customer identity is stored in Stripe metadata and synced by the
+// Supabase Stripe Sync Engine; no local subscription ledger is required.
 
 import Stripe from 'npm:stripe@22.4.0'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -17,7 +19,6 @@ Deno.serve(async (req) => {
   try {
     const url = Deno.env.get('SUPABASE_URL')!
     const anon = Deno.env.get('SUPABASE_ANON_KEY')!
-    const service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
     const appUrl = Deno.env.get('APP_URL') || 'https://u-me-now.online'
     const authHeader = req.headers.get('Authorization') ?? ''
@@ -25,22 +26,34 @@ Deno.serve(async (req) => {
 
     const asUser = createClient(url, anon, { global: { headers: { Authorization: authHeader } } })
     const { data: { user }, error: userErr } = await asUser.auth.getUser()
-    if (userErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } })
-
-    const admin = createClient(url, service, { auth: { persistSession: false } })
-    const { data: subscription } = await admin.from('subscriptions').select('stripe_customer_id').eq('user_id', user.id).maybeSingle()
-    if (!subscription?.stripe_customer_id) {
-      return new Response(JSON.stringify({ error: 'No Stripe customer is associated with this account.' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } })
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } })
     }
 
     const stripe = new Stripe(stripeKey, { httpClient: Stripe.createFetchHttpClient() })
+    const customers = await stripe.customers.search({
+      query: `metadata['user_id']:'${user.id}'`,
+      limit: 1
+    })
+    const customerId = customers.data[0]?.id
+
+    if (!customerId) {
+      return new Response(JSON.stringify({ error: 'No Stripe customer is associated with this account.' }), { status: 404, headers: { ...cors, 'Content-Type': 'application/json' } })
+    }
+
     const portal = await stripe.billingPortal.sessions.create({
-      customer: subscription.stripe_customer_id,
+      customer: customerId,
       return_url: `${appUrl}/premium`
     })
 
-    return new Response(JSON.stringify({ url: portal.url }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ url: portal.url }), {
+      status: 200,
+      headers: { ...cors, 'Content-Type': 'application/json' }
+    })
   } catch (e) {
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+      status: 500,
+      headers: { ...cors, 'Content-Type': 'application/json' }
+    })
   }
 })
