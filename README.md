@@ -1,171 +1,221 @@
 # U, ME, NOW — WHO'S AROUND?
 
-A mobile-first, installable **PWA** for adult (18+) location-based dating and social
-discovery, launching privately in **Jakarta**. Built with **React + TypeScript + Vite**,
-backed entirely by **Supabase Free** (Auth, PostgreSQL, Storage, Edge Functions, Realtime),
-and deployable as a **static site to Cloudflare Pages Free**.
+A mobile-first, installable **PWA** for adult (18+) location-based dating and social discovery, launching privately in **Jakarta**. Built with **React + TypeScript + Vite**, backed by **Supabase Free** (Auth, PostgreSQL, Storage, Edge Functions, Realtime), and deployable as a static site to **Cloudflare Pages Free**.
 
 - Public language: **U, ME, NOW** · **WHO'S AROUND?** · *Meet people nearby. Right now.* · *Less scrolling. More NOW.*
-- No paid services, no credit card, no external maps, no AI, no payments, no push.
-- The browser only ever uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
-  The service-role key is used **only** inside a Supabase Edge Function, never in the client.
+- Monetisation: optional **U-ME-NOW+** monthly subscription via **Stripe**.
+- U-ME-NOW+ pricing: **Rp175,000/month** for Indonesia or **US$9.99/month** internationally.
+- Free users keep core discovery, matching and direct chat. Premium users get unlimited likes and can see people who liked them.
+- The browser only ever uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Stripe secret keys and webhook secrets are server-side only.
 
 ```
 /app
-├── frontend/                 # the React + Vite PWA (this is what deploys)
+├── frontend/                 # React + Vite PWA
 │   ├── src/                  # pages, components, lib, context, hooks
-│   ├── public/               # favicon, icons, manifest source, _redirects
-│   ├── scripts/              # seed.mjs, unseed.mjs, make-icons.mjs
-│   └── .env / .env.example
+│   ├── public/               # icons, manifest, _redirects
+│   └── scripts/              # development seed helpers
 └── supabase/
-    ├── migrations/           # 0001..0005 SQL — run in order
+    ├── migrations/           # 0001..0006 SQL — run in order
+    ├── config.toml            # Edge Function JWT settings
     └── functions/
-        └── delete-account/   # secure account-deletion Edge Function
+        ├── delete-account/
+        ├── create-checkout-session/
+        ├── create-portal-session/
+        └── stripe-webhook/
 ```
 
 ---
 
 ## 1. Supabase project setup
 
-1. Go to https://supabase.com → sign in → **New project** (Free plan). Region: **Singapore**
-   (closest to Jakarta). Set and save a strong database password.
-2. Wait for the project to finish provisioning.
-3. Open **Project Settings → API**. You will need:
-   - **Project URL** → `VITE_SUPABASE_URL`
-   - **anon public** key → `VITE_SUPABASE_PUBLISHABLE_KEY`
+1. Go to https://supabase.com → sign in → **New project** (Free plan). Region: **Singapore**.
+2. Open **Project Settings → API**.
+3. Use the Project URL and publishable/anon key only in the frontend.
 
-## 2. Required environment variables
+## 2. Browser environment variables
 
-Local dev lives in `frontend/.env` (copy from `frontend/.env.example`):
+Local development uses `frontend/.env`:
 
-```
+```text
 VITE_SUPABASE_URL=https://YOUR-PROJECT-ref.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=YOUR-ANON-PUBLISHABLE-KEY
-VITE_SUPPORT_EMAIL=support@yourdomain.com   # real inbox before launch
+VITE_SUPPORT_EMAIL=your-real-support-address
 ```
 
-> Only `VITE_`-prefixed variables reach the browser. Never put the service-role key here.
+Never put a Supabase service-role key or Stripe secret in `frontend/.env` or Cloudflare browser-exposed variables.
 
-## 3. Database migration instructions
+## 3. Database migrations
 
-Open **Supabase → SQL Editor** and run each file in `supabase/migrations/` **in order**:
+Run each file in `supabase/migrations/` in order in the Supabase SQL Editor:
 
-1. `0001_schema.sql` — tables, constraints, indexes, structural triggers
-2. `0002_functions.sql` — security-definer helpers, discovery/chat RPCs, match trigger
-3. `0003_rls.sql` — enables Row Level Security + all policies
-4. `0004_storage.sql` — private photo bucket + object policies
-5. `0005_realtime.sql` — enables realtime on `messages`
+1. `0001_schema.sql` — core tables and structural triggers
+2. `0002_functions.sql` — security-definer helpers and application RPCs
+3. `0003_rls.sql` — Row Level Security policies
+4. `0004_storage.sql` — private profile-photo storage
+5. `0005_realtime.sql` — realtime messages
+6. `0006_monetisation.sql` — Stripe subscriptions, premium entitlement, 20/day free-like quota, incoming-like RPC and RLS
 
-(If you prefer the CLI: `supabase link` then `supabase db push`.)
+CLI alternative:
 
-## 4. Storage bucket setup
+```text
+supabase link
+supabase db push
+```
 
-`0004_storage.sql` creates a **private** bucket `profile-photos` (not public) with a 5 MB
-limit and image-only MIME types, plus object RLS: owners manage their own files
-(`{user_id}/…`), and reads are limited to the owner, admins, or users allowed to view that
-profile. The app fetches photos through **short-lived signed URLs** — never public links.
-No manual dashboard step is required beyond running the migration.
+## 4. Storage
 
-## 5. Authentication redirect URL setup
+`0004_storage.sql` creates the private `profile-photos` bucket with a 5 MB limit and image MIME restrictions. Users can only manage their own objects. Do not make the bucket public.
 
-**Supabase → Authentication → URL Configuration:**
+## 5. Authentication and email
 
-- **Site URL:** your production origin, e.g. `https://umenow.pages.dev` (or your custom domain).
-- **Redirect URLs:** add every origin you use, each exactly:
-  - `http://localhost:3000/auth/callback`
-  - `http://localhost:3000/auth/reset`
-  - `https://YOUR-CLOUDFLARE-DOMAIN/auth/callback`
-  - `https://YOUR-CLOUDFLARE-DOMAIN/auth/reset`
+Supabase → Authentication → URL Configuration:
 
-**Authentication → Providers → Email:** keep **Email** enabled with **Confirm email** ON.
-This uses Supabase's built-in free email sender.
+- Site URL: `https://u-me-now.online`
+- Add production `/auth/callback` and `/auth/reset` URLs.
+- Keep Email authentication and confirmation enabled.
 
-> **Free email rate limit:** Supabase's default built-in email is limited (roughly a few
-> messages per hour) and is intended for testing. For real launch traffic, configure a
-> custom SMTP provider (Authentication → Emails → SMTP). The app already surfaces this to
-> users (slow delivery notice + resend controls).
+For production email, configure **Resend as Supabase SMTP** rather than using the default Supabase sender. The password-reset template must contain the Supabase `{{ .ConfirmationURL }}` link so the recovery URL is actually clickable.
 
-## 6. GitHub connection
+## 6. Stripe setup
 
-The source is backed up to a **private GitHub repo** independent of Emergent.
-Use the **"Save to Github"** button in the Emergent chat toolbar to push commits.
-(This repo is already linked to `github.com/<you>/U-ME-NOW`.)
+Stripe is the payment processor for U-ME-NOW+. The application uses Stripe-hosted Checkout for subscriptions and the Stripe Billing Portal for billing management. Stripe documents subscription Checkout Sessions and the customer portal as server-side integrations; webhook signatures must be verified against the raw request body. citeturn1search2turn1search0turn2search0
 
-## 7. Cloudflare Pages build settings
+### Create the Stripe catalogue
 
-Cloudflare → **Workers & Pages → Create → Pages → Connect to Git** → pick this repo.
+In **Stripe Dashboard → Product catalogue** create:
+
+**Product:** `U-ME-NOW+`
+
+Create two recurring monthly prices:
+
+- **IDR 175,000 / month** — copy its Price ID into `STRIPE_PRICE_ID_IDR`
+- **USD 9.99 / month** — copy its Price ID into `STRIPE_PRICE_ID_USD`
+
+Use the same product for both prices.
+
+### Configure the Stripe Customer Portal
+
+In Stripe Billing → Customer portal, enable at minimum:
+
+- payment-method updates
+- invoice history
+- subscription cancellation
+
+The portal gives customers a secure hosted page for managing billing. citeturn1search0
+
+### Supabase Edge Function secrets
+
+Set these in **Supabase → Edge Functions → Secrets**:
+
+```text
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PRICE_ID_IDR=price_...
+STRIPE_PRICE_ID_USD=price_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+APP_URL=https://u-me-now.online
+```
+
+Do **not** put any of these in the React frontend.
+
+### Deploy the Edge Functions
+
+```text
+supabase functions deploy create-checkout-session
+supabase functions deploy create-portal-session
+supabase functions deploy stripe-webhook
+supabase functions deploy delete-account
+```
+
+`supabase/config.toml` keeps JWT verification enabled for the authenticated functions and disabled only for `stripe-webhook`.
+
+### Stripe webhook
+
+In **Stripe Dashboard → Workbench → Webhooks**, create a live endpoint:
+
+```text
+https://zfqubamijskcjbbjtxyp.supabase.co/functions/v1/stripe-webhook
+```
+
+Subscribe to:
+
+- `checkout.session.completed`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.paid`
+- `invoice.payment_failed`
+
+Copy the endpoint signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
+
+The webhook is intentionally the authoritative source for subscription status. It verifies Stripe's signature and writes the entitlement into Supabase. Stripe recommends signature verification and handling subscription changes through webhooks. citeturn2search1turn2search0
+
+## 7. GitHub
+
+The source is backed up in the private GitHub repository independently of the hosting provider.
+
+## 8. Cloudflare Pages
+
+Use the connected GitHub repository with:
 
 | Setting | Value |
 | --- | --- |
 | Production branch | `main` |
-| **Framework preset** | `None` (or Vite) |
-| **Root directory** | `frontend` |
-| **Build command** | `yarn build` |
-| **Build output directory** | `dist` |
-| Node version | 20 (set env `NODE_VERSION=20`) |
+| Framework preset | `None` |
+| Root directory | `frontend` |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Node version | `20` |
 
-SPA deep links are handled by `frontend/public/_redirects` (`/* /index.html 200`), which is
-copied into `dist/` on build.
+Cloudflare Pages environment variables:
 
-## 8. Cloudflare Pages environment variables
-
-Pages project → **Settings → Environment variables → Production** (and Preview):
-
-```
+```text
 VITE_SUPABASE_URL=https://YOUR-PROJECT-ref.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=YOUR-ANON-PUBLISHABLE-KEY
-VITE_SUPPORT_EMAIL=support@yourdomain.com
+VITE_SUPPORT_EMAIL=your-real-support-address
 NODE_VERSION=20
 ```
 
-Redeploy after saving so the build picks them up.
+The SPA fallback is provided by `frontend/public/_redirects`.
 
-## Edge Function (account deletion)
+## 9. Admin assignment
 
-Deploy once with the Supabase CLI:
-
-```
-supabase functions deploy delete-account
-```
-
-It automatically receives `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
-`SUPABASE_SERVICE_ROLE_KEY` from the platform — no manual secrets needed. It verifies the
-caller, removes their photos, and deletes their auth user (cascading all data).
-
-## Assigning admins (moderation)
-
-Admin access is **never** self-serve. In **Supabase → SQL Editor**:
+Admin access is never self-serve. In Supabase SQL Editor:
 
 ```sql
 insert into public.admin_roles (user_id, role)
-values ('<the-auth-user-uuid>', 'admin');
+values ('<auth-user-uuid>', 'admin');
 ```
 
-Find the UUID under **Authentication → Users**. That user then sees `/admin`.
+## 10. Development seed
 
-## Development seed (optional, non-production)
+Demo data is development-only. Remove it before launch using the existing seed/unseed scripts.
 
-From `frontend/`, with the service-role key exported:
+## 11. Local development
 
-```
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/seed.mjs     # add demo profiles
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/unseed.mjs   # remove them all
-```
-
-All demo accounts use `@umenow.dev` and are clearly labelled "(demo)". **Run `unseed.mjs`
-before public launch.**
-
-## Local development
-
-```
+```text
 cd frontend
-cp .env.example .env   # fill in your values
-yarn install --ignore-engines
-yarn start             # http://localhost:3000
+npm install
+npm run dev
 ```
 
-## 9. Production launch checks
+## 12. Production payment test
 
-See `LAUNCH_CHECKLIST.md` for the full pre-launch list (legal review, support email,
-admin assignment, demo-data removal, redirect URLs, SMTP, RLS smoke tests, PWA install,
-and store/payment-approval notes).
+Use Stripe **test mode first** with test price IDs and a Stripe test payment method. Verify:
+
+1. authenticated user opens `/premium`
+2. IDR and USD prices are selectable
+3. Checkout opens on Stripe
+4. successful checkout redirects back to `/premium`
+5. webhook creates/updates `public.subscriptions`
+6. U-ME-NOW+ becomes active
+7. free-like quota becomes unlimited
+8. incoming likes become visible
+9. Billing Portal opens
+10. cancellation at period end preserves access until `current_period_end`
+11. canceled/expired subscription removes premium access
+
+Only after that should live Stripe keys, live prices and the live webhook be enabled.
+
+## Production launch
+
+See `LAUNCH_CHECKLIST.md` for legal, support, moderation, DNS, authentication, PWA and payment approval checks. U-ME-NOW should not publicly launch until Stripe approval, final legal review and operational moderation/support arrangements are complete.
