@@ -27,14 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAdmin(false)
       return
     }
-    const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
-    setProfile((data as Profile) ?? null)
-    const { data: adminRow } = await supabase
-      .from('admin_roles')
-      .select('user_id')
-      .eq('user_id', uid)
-      .maybeSingle()
-    setIsAdmin(Boolean(adminRow))
+
+    // These requests are independent; don't make the app wait for them serially.
+    const [profileResult, adminResult] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+      supabase.from('admin_roles').select('user_id').eq('user_id', uid).maybeSingle()
+    ])
+
+    setProfile((profileResult.data as Profile) ?? null)
+    setIsAdmin(Boolean(adminResult.data))
   }, [])
 
   const refreshProfile = useCallback(async () => {
@@ -46,15 +47,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       return
     }
+
+    let initialised = false
+
     supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session)
       await loadProfile(data.session?.user?.id)
+      initialised = true
       setLoading(false)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s)
-      await loadProfile(s?.user?.id)
+      // Don't block the auth callback on database profile queries.
+      // The initial getSession path owns the initial loading state.
+      void loadProfile(s?.user?.id)
+      if (initialised) setLoading(false)
     })
+
     return () => sub.subscription.unsubscribe()
   }, [loadProfile])
 
