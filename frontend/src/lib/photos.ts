@@ -16,8 +16,32 @@ export async function signedPhotoUrl(path: string | null | undefined): Promise<s
   return data.signedUrl
 }
 
+// Batch the first photos for discovery grids into one storage request instead
+// of making one signed-URL request per profile card.
+export async function prefetchSignedPhotoUrls(paths: string[]): Promise<void> {
+  const unique = [...new Set(paths.filter(Boolean))]
+  const missing = unique.filter((path) => {
+    const hit = cache.get(path)
+    return !hit || hit.exp <= Date.now()
+  })
+  if (!missing.length) return
+
+  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(missing, 3600)
+  if (error || !data) return
+
+  for (const item of data) {
+    if (item.path && item.signedUrl) {
+      cache.set(item.path, { url: item.signedUrl, exp: Date.now() + TTL_MS })
+    }
+  }
+}
+
 export async function signedPhotoUrls(paths: string[]): Promise<string[]> {
-  const out = await Promise.all(paths.map((p) => signedPhotoUrl(p)))
+  await prefetchSignedPhotoUrls(paths)
+  const out = paths.map((path) => {
+    const hit = cache.get(path)
+    return hit && hit.exp > Date.now() ? hit.url : null
+  })
   return out.filter((u): u is string => Boolean(u))
 }
 
