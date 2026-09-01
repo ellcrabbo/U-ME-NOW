@@ -10,6 +10,7 @@ import { ReportModal, ReportTarget } from '../components/ReportModal'
 import { ConfigBanner } from '../components/ConfigBanner'
 import { INTENTS } from '../lib/constants'
 import { DiscoverRow } from '../lib/types'
+import { prefetchSignedPhotoUrls } from '../lib/photos'
 
 interface LikeQuota { premium: boolean; used_count: number; remaining_count: number }
 
@@ -29,12 +30,26 @@ export default function Discovery() {
   const load = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return }
     setLoading(true)
-    const { data, error } = await supabase.rpc('discover', { p_online: onlineOnly, p_recent: recentOnly, p_intent: intent })
-    if (!error && data) setRows(data as DiscoverRow[])
-    const { data: myLikes } = await supabase.from('likes').select('liked_id').eq('liker_id', user?.id)
-    setLiked(new Set((myLikes || []).map((l: { liked_id: string }) => l.liked_id)))
-    const { data: q } = await supabase.rpc('my_like_quota')
-    setQuota((q?.[0] as LikeQuota) || null)
+
+    const [discoverResult, likesResult, quotaResult] = await Promise.all([
+      supabase.rpc('discover', { p_online: onlineOnly, p_recent: recentOnly, p_intent: intent }),
+      user?.id
+        ? supabase.from('likes').select('liked_id').eq('liker_id', user.id)
+        : Promise.resolve({ data: [], error: null }),
+      supabase.rpc('my_like_quota')
+    ])
+
+    const discovered = (!discoverResult.error && discoverResult.data)
+      ? discoverResult.data as DiscoverRow[]
+      : []
+
+    // Sign the visible grid photos in one storage request. This removes the
+    // N-per-profile signed-URL waterfall that made discovery feel slow.
+    await prefetchSignedPhotoUrls(discovered.map((row) => row.photo_paths?.[0]).filter((p): p is string => Boolean(p)))
+
+    setRows(discovered)
+    setLiked(new Set(((likesResult.data || []) as { liked_id: string }[]).map((l) => l.liked_id)))
+    setQuota((quotaResult.data?.[0] as LikeQuota) || null)
     setLoading(false)
   }, [onlineOnly, recentOnly, intent, user?.id])
 
