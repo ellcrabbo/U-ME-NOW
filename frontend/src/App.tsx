@@ -17,6 +17,7 @@ import ProfileSettings from './pages/ProfileSettings'
 import Premium from './pages/Premium'
 import Safety from './pages/Safety'
 import Admin from './pages/Admin'
+import AdminAgeVerification from './pages/AdminAgeVerification'
 import { Terms, Privacy, Guidelines, AcceptableUse, Reporting, LawEnforcement, Refunds, Contact } from './pages/Legal'
 import NotFound from './pages/NotFound'
 
@@ -40,6 +41,7 @@ export default function App() {
       <Route path="/me" element={<RequireAuth><ProfileSettings /></RequireAuth>} />
       <Route path="/premium" element={<RequireOnboarded><Premium /></RequireOnboarded>} />
       <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
+      <Route path="/admin/age-verification" element={<RequireAdmin><AdminAgeVerification /></RequireAdmin>} />
       <Route path="/safety" element={<Safety />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
