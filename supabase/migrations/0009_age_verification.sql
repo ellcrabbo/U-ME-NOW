@@ -55,6 +55,11 @@ create policy age_submission_select on public.age_verification_submissions
   for select to authenticated
   using (user_id = auth.uid() or public.is_admin(auth.uid()));
 
+drop policy if exists age_submission_delete on public.age_verification_submissions;
+create policy age_submission_delete on public.age_verification_submissions
+  for delete to authenticated
+  using (user_id = auth.uid() and status = 'rejected');
+
 drop policy if exists age_submission_update on public.age_verification_submissions;
 create policy age_submission_update on public.age_verification_submissions
   for update to authenticated
@@ -86,11 +91,9 @@ create policy age_files_delete on storage.objects
   for delete to authenticated
   using (
     bucket_id = 'age-verification'
-    and public.is_admin(auth.uid())
+    and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
   );
 
--- Only an admin can change the outcome. This prevents users from approving
--- themselves through the client.
 create or replace function public.admin_review_age_verification(
   p_submission uuid,
   p_status text,
