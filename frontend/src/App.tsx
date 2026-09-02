@@ -16,7 +16,7 @@ import ProfileSettings from './pages/ProfileSettings'
 import Premium from './pages/Premium'
 import Safety from './pages/Safety'
 import Admin from './pages/Admin'
-import { Terms, Privacy, Guidelines, Contact } from './pages/Legal'
+import { Terms, Privacy, Guidelines, AcceptableUse, Reporting, LawEnforcement, Refunds, Contact } from './pages/Legal'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -42,6 +42,10 @@ export default function App() {
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/guidelines" element={<Guidelines />} />
+      <Route path="/acceptable-use" element={<AcceptableUse />} />
+      <Route path="/reporting" element={<Reporting />} />
+      <Route path="/law-enforcement" element={<LawEnforcement />} />
+      <Route path="/refunds" element={<Refunds />} />
       <Route path="/contact" element={<Contact />} />
       <Route path="/404" element={<NotFound />} />
       <Route path="*" element={<Navigate to="/404" replace />} />
