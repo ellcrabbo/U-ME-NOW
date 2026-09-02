@@ -17,6 +17,20 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+export function RequireAgeVerified({ children }: { children: ReactNode }) {
+  const { loading, session, ageVerified } = useAuth()
+  const loc = useLocation()
+  if (loading)
+    return (
+      <AppShell nav={false}>
+        <Spinner label="Loading" />
+      </AppShell>
+    )
+  if (!session) return <Navigate to="/auth/sign-in" replace state={{ from: loc.pathname }} />
+  if (!ageVerified) return <Navigate to="/age-verification" replace />
+  return <>{children}</>
+}
+
 export function RequireOnboarded({ children }: { children: ReactNode }) {
   const { loading, session, profile, ageVerified } = useAuth()
   const loc = useLocation()
