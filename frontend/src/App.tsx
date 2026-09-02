@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { RequireAuth, RequireOnboarded, RequireAdmin } from './components/Guards'
+import { RequireAuth, RequireAgeVerified, RequireOnboarded, RequireAdmin } from './components/Guards'
 import { useAuth } from './context/AuthContext'
 import { useHeartbeat } from './hooks/useHeartbeat'
 
@@ -8,6 +8,7 @@ import { SignIn, SignUp } from './pages/Auth'
 import Forgot from './pages/Forgot'
 import ResetPassword from './pages/ResetPassword'
 import AuthCallback from './pages/AuthCallback'
+import AgeVerification from './pages/AgeVerification'
 import Onboarding from './pages/Onboarding'
 import Discovery from './pages/Discovery'
 import Connections from './pages/Connections'
@@ -31,7 +32,8 @@ export default function App() {
       <Route path="/auth/forgot" element={<Forgot />} />
       <Route path="/auth/reset" element={<ResetPassword />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
+      <Route path="/age-verification" element={<RequireAuth><AgeVerification /></RequireAuth>} />
+      <Route path="/onboarding" element={<RequireAgeVerified><Onboarding /></RequireAgeVerified>} />
       <Route path="/discover" element={<RequireOnboarded><Discovery /></RequireOnboarded>} />
       <Route path="/connections" element={<RequireOnboarded><Connections /></RequireOnboarded>} />
       <Route path="/chat/:conversationId" element={<RequireOnboarded><Chat /></RequireOnboarded>} />
