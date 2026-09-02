@@ -84,8 +84,12 @@ export default function Landing() {
           <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-warm-faint">
             <Link to="/safety">Safety</Link>
             <Link to="/guidelines">Guidelines</Link>
+            <Link to="/acceptable-use">AUP</Link>
+            <Link to="/reporting">Report</Link>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
+            <Link to="/refunds">Payments</Link>
+            <Link to="/law-enforcement">Law enforcement</Link>
             <Link to="/contact">Contact</Link>
           </div>
         </div>
