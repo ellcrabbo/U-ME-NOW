@@ -61,8 +61,6 @@ export default function AgeVerification() {
       return
     }
 
-    // A rejected user may submit again. Remove only their own previous submission;
-    // the storage cleanup is performed before replacing the record.
     const { data: old } = await supabase
       .from('age_verification_submissions')
       .select('id_storage_path,selfie_storage_path,status')
@@ -115,10 +113,14 @@ export default function AgeVerification() {
       return
     }
 
-    await supabase
-      .from('profile_private')
-      .update({ age_verification_status: 'pending' })
-      .eq('id', user.id)
+    const pending = await supabase.rpc('mark_age_verification_pending')
+    if (pending.error) {
+      await supabase.storage.from('age-verification').remove([idPath, selfiePath])
+      await supabase.from('age_verification_submissions').delete().eq('user_id', user.id)
+      setBusy(false)
+      setErr(`Could not finalise verification submission: ${pending.error.message}`)
+      return
+    }
 
     setStatus('pending')
     setSubmitted(true)
