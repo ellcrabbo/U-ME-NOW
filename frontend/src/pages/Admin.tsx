@@ -59,12 +59,15 @@ export default function Admin() {
           <h1 className="display text-3xl font-bold">Moderation</h1>
         </div>
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           <button onClick={() => setTab('reports')} className={`chip ${tab === 'reports' ? 'chip-on' : ''}`} data-testid="admin-tab-reports">
             Report queue
           </button>
           <button onClick={() => setTab('history')} className={`chip ${tab === 'history' ? 'chip-on' : ''}`} data-testid="admin-tab-history">
             Action history
+          </button>
+          <button onClick={() => nav('/admin/age-verification')} className="chip" data-testid="admin-tab-age-verification">
+            Age verification
           </button>
         </div>
 
