@@ -94,6 +94,56 @@ create policy age_files_delete on storage.objects
     and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin(auth.uid()))
   );
 
+-- Protect the age-verification outcome from being set directly by a user.
+create or replace function public.prevent_age_verification_tampering()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin(auth.uid()) and (
+    new.age_verification_status is distinct from old.age_verification_status or
+    new.age_verified_at is distinct from old.age_verified_at or
+    new.age_verification_method is distinct from old.age_verification_method or
+    new.age_verification_reviewed_by is distinct from old.age_verification_reviewed_by or
+    new.age_verification_reviewed_at is distinct from old.age_verification_reviewed_at
+  ) then
+    raise exception 'Age verification fields are managed by the verification workflow';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_protect_age_verification on public.profile_private;
+create trigger trg_protect_age_verification
+before update on public.profile_private
+for each row execute function public.prevent_age_verification_tampering();
+
+create or replace function public.mark_age_verification_pending()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.age_verification_submissions
+    where user_id = auth.uid() and status = 'pending'
+  ) then
+    raise exception 'No pending age verification submission';
+  end if;
+
+  update public.profile_private
+  set age_verification_status = 'pending'
+  where id = auth.uid();
+end;
+$$;
+
+grant execute on function public.mark_age_verification_pending() to authenticated;
+
+-- Only an admin can change the outcome. This prevents users from approving
+-- themselves through the client.
 create or replace function public.admin_review_age_verification(
   p_submission uuid,
   p_status text,
