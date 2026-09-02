@@ -18,7 +18,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 export function RequireOnboarded({ children }: { children: ReactNode }) {
-  const { loading, session, profile } = useAuth()
+  const { loading, session, profile, ageVerified } = useAuth()
   const loc = useLocation()
   if (loading)
     return (
@@ -27,6 +27,7 @@ export function RequireOnboarded({ children }: { children: ReactNode }) {
       </AppShell>
     )
   if (!session) return <Navigate to="/auth/sign-in" replace state={{ from: loc.pathname }} />
+  if (!ageVerified) return <Navigate to="/age-verification" replace />
   if (!profile?.onboarding_complete) return <Navigate to="/onboarding" replace />
   return <>{children}</>
 }
