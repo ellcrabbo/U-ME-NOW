@@ -33,6 +33,7 @@ Mark every item before going public. Items flagged **(YOU)** need a human decisi
 ## Safety & moderation
 - [ ] **(YOU)** Assign at least one real admin via `admin_roles`.
 - [ ] Verify the `/admin` report queue, suspend, ban, reinstate, and action history work.
+- [ ] Verify `/admin/age-verification` can open pending ID/selfie submissions, record approve/reject decisions, and remove the underlying files after review.
 - [ ] Confirm blocking hides both users, stops likes/matches, and closes chat access.
 - [ ] Confirm reporting a profile / photo / message creates a report visible only to authorised admins.
 - [ ] Confirm moderation actions are logged and retained appropriately.
@@ -44,10 +45,12 @@ Mark every item before going public. Items flagged **(YOU)** need a human decisi
 - [ ] **(YOU)** Complete a UK GDPR DPIA where required and document Indonesian PDP compliance.
 - [ ] **(YOU)** Maintain a processor/vendor register and appropriate data-processing agreements.
 - [ ] **(YOU)** Document international-transfer safeguards for data leaving the UK or Indonesia where applicable.
-- [ ] Run all production database migrations in the documented order.
+- [ ] Run all production database migrations in the documented order, including `0009_age_verification.sql`.
 - [ ] Verify RLS is ON for every relevant table.
 - [ ] Confirm date of birth and broad area are never returned to the client (only age + "Nearby" appear).
 - [ ] Confirm the `profile-photos` bucket is private and photos load via signed URLs.
+- [ ] Confirm the `age-verification` bucket is private and only the submitting user and authorised admins can access the files.
+- [ ] Confirm age-verification ID/selfie files are deleted after every review decision and only the result/review metadata is retained.
 - [ ] Deploy the `delete-account`, `create-checkout-session`, and `create-portal-session` Edge Functions required by the current architecture.
 - [ ] Confirm Stripe secrets are stored only in Supabase Edge Function Secrets, never in frontend or browser environment variables.
 - [ ] **(YOU)** Implement and test the applicable data-breach response and notification procedure.
@@ -56,9 +59,19 @@ Mark every item before going public. Items flagged **(YOU)** need a human decisi
 - [ ] Set **Site URL** and **Redirect URLs** for `https://u-me-now.online`.
 - [ ] **(YOU)** Configure Resend as custom SMTP and complete SPF/DKIM/DMARC.
 - [ ] Confirm the Supabase reset-password email contains a clickable `{{ .ConfirmationURL }}` link.
-- [ ] Test sign-up → email confirm → onboarding → discovery, plus reset-password.
+- [ ] Test sign-up → email confirm → age verification → onboarding → discovery, plus reset-password.
 - [ ] **(YOU)** Record the acceptance/version of Terms and any separate consent required for processing sensitive data, where applicable.
 - [ ] Ensure Google/OAuth registration cannot bypass required age, Terms or privacy acceptance controls.
+
+## Age verification — zero-cost MVP process
+- [ ] User must submit a government-issued photo ID showing date of birth plus a contemporaneous selfie.
+- [ ] User is blocked from discovery, matching and messaging until an authorised reviewer approves the submission.
+- [ ] Reviewer compares the selfie with the ID photograph and confirms the ID establishes age 18+.
+- [ ] Reviewer does not copy unnecessary ID information into U-ME-NOW.
+- [ ] Review outcome is recorded as `approved` or `rejected` with reviewer and timestamp metadata.
+- [ ] Underlying ID/selfie files are deleted immediately after the decision.
+- [ ] **(YOU)** Define a secure reviewer procedure: private workspace, no local downloads/screenshots, least-privilege admin account, and no sharing of documents outside the authorised review process.
+- [ ] **(YOU)** Confirm with legal/privacy counsel that this manual process is appropriate for the jurisdictions and risk profile in which the service will actually operate.
 
 ## Demo data
 - [ ] Remove all `@umenow.dev` demo accounts before public launch.
